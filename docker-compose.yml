@@ -1,0 +1,30 @@
+
+# 실행할 서비스(컨테이너)들 정의
+services:
+  # 1. 웹 서버 서비스 (app.py 실행)
+  web:
+    # 현재 디렉토리의 Dockerfile을 사용하여 이미지를 빌드합니다.
+    build: .
+    # 서비스의 이름을 'web'으로 지정합니다.
+    container_name: meeting-room-bot-socket-web
+    # 로컬의 3000번 포트를 컨테이너의 3000번 포트와 연결합니다.
+    # 이를 통해 로컬에서 localhost:3000으로 컨테이너에 접근할 수 있습니다.
+    command: python app.py
+    ports:
+      - "3000:3000"
+    # .env 파일의 환경 변수를 컨테이너 안으로 주입합니다.
+    env_file:
+      - .env
+    # 컨테이너가 비정상 종료 시 자동으로 다시 시작하도록 설정합니다.
+    restart: always
+
+  # 2. 스케줄러 서비스 (scheduler.py 실행)
+  scheduler:
+    # 웹 서버와 동일한 이미지를 사용하므로, 다시 빌드할 필요가 없습니다.
+    build: .
+    container_name: meeting-room-bot-socket-scheduler
+    # 기본 명령어(CMD)를 무시하고, scheduler.py를 실행하도록 덮어씁니다.
+    command: python scheduler.py
+    env_file:
+      - .env
+    restart: always

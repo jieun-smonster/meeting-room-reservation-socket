@@ -1,0 +1,20 @@
+# Git files
+.git
+.gitignore
+
+# Docker files
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Python virtual environment and cache
+.venv
+venv/
+__pycache__/
+
+# Local environment file (secrets)
+.env
+
+# IDE settings
+.idea/
+.vscode/

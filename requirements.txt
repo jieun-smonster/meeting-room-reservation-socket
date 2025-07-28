@@ -1,0 +1,15 @@
+
+# Flask Framework
+flask
+
+# Slack Bolt SDK for Python
+slack_bolt[socket_mode]>=1.18.0
+
+# Notion API Client
+notion-client
+
+# Environment variable management
+python-dotenv
+
+# Scheduler for regular tasks
+apscheduler
