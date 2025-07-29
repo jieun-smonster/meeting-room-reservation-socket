@@ -36,7 +36,7 @@ class ConflictError(Exception):
         for date_key in sorted(date_groups.keys()):
             reservations = date_groups[date_key]
             
-            # 날짜 헤더 (한국어 형식으로 변환)
+            # 날짜 헤더
             if date_key != '날짜 정보 없음':
                 try:
                     from datetime import datetime

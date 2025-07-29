@@ -11,7 +11,7 @@ def get_current_date():
     return datetime.now().strftime('%Y-%m-%d')
 
 def get_korean_weekday(date_str):
-    """날짜 문자열을 받아 한국어 요일을 반환합니다."""
+    """날짜 문자열을 받아 요일을 반환합니다."""
     try:
         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
         weekdays = ['월', '화', '수', '목', '금', '토', '일']

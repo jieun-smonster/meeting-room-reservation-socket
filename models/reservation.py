@@ -30,6 +30,7 @@ class ReservationData:
     recurring_id: Optional[str] = None
     booking_date: Optional[str] = None
     is_recurring: bool = False
+    recurring_weeks: int = 4  # 기본 4주
 
     def to_dict(self) -> Dict[str, Any]:
         """딕셔너리로 변환"""
@@ -46,7 +47,8 @@ class ReservationData:
             "page_id": self.page_id,
             "recurring_id": self.recurring_id,
             "booking_date": self.booking_date,
-            "is_recurring": self.is_recurring
+            "is_recurring": self.is_recurring,
+            "recurring_weeks": self.recurring_weeks
         }
 
     @property
@@ -76,6 +78,8 @@ class ReservationModalData:
     team_id: str = ""
     participants: List[str] = None
     page_id: str = ""
+    is_recurring: bool = False
+    recurring_weeks: str = "4"  # 기본 4주
 
     def __post_init__(self):
         if self.participants is None:

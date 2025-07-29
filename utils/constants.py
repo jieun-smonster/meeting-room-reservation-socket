@@ -52,6 +52,9 @@ class ActionIds:
     """액션 ID 상수"""
     EDIT_RESERVATION = "edit_reservation"
     CANCEL_RESERVATION = "cancel_reservation"
+    RESERVATION_ACTION = "reservation_action"
+    HOME_REFRESH = "home_refresh"
+    HOME_MAKE_RESERVATION = "home_make_reservation"
 
 
 class ErrorMessages:

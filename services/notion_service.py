@@ -160,10 +160,31 @@ class NotionService(LoggerMixin):
         try:
             properties = self._build_reservation_properties(reservation_data)
             
+            # 예약 생성 전 마지막으로 충돌 검사
+            conflicts = self.get_conflicting_reservations(
+                reservation_data.start_dt,
+                reservation_data.end_dt,
+                reservation_data.room_name
+            )
+            
+            if conflicts:
+                self.log_error("예약 생성 직전 충돌 발견",
+                             room=reservation_data.room_name,
+                             start=reservation_data.start_dt,
+                             end=reservation_data.end_dt)
+                raise NotionError("예약 생성 직전 시간 충돌이 발견되었습니다.")
+            
+            # Notion에 예약 생성
             response = self.client.pages.create(
                 parent={"database_id": self.config.database_id},
                 properties=properties
             )
+            
+            if not response or "id" not in response:
+                self.log_error("Notion 응답에 page ID가 없음",
+                             title=reservation_data.title,
+                             room=reservation_data.room_name)
+                raise NotionError("Notion에서 유효하지 않은 응답을 받았습니다.")
             
             self.log_info("예약 생성 성공", 
                          title=reservation_data.title,
@@ -172,7 +193,10 @@ class NotionService(LoggerMixin):
             return response
             
         except Exception as e:
-            self.log_error("Notion 페이지 생성 중 오류", title=reservation_data.title)
+            self.log_error("Notion 페이지 생성 중 오류",
+                         title=reservation_data.title,
+                         room=reservation_data.room_name,
+                         error=str(e))
             raise NotionError(f"Notion 페이지 생성에 실패했습니다: {e}")
     
     @handle_exceptions(default_message="예약 조회에 실패했습니다")
@@ -419,16 +443,23 @@ class NotionService(LoggerMixin):
             end_dt = end_dt.astimezone()
     
     def _build_conflict_filter(self, start_dt: datetime, end_dt: datetime, room_name: str) -> Dict[str, Any]:
-        """충돌 검사를 위한 필터 조건 생성"""
+        """
+        충돌 검사를 위한 필터 조건 생성
+        
+        시간 충돌 조건:
+        1. 기존 예약의 시작 시각이 새 예약의 종료 시각보다 빠르고 (기존.시작 < 새.종료)
+        2. 기존 예약의 종료 시각이 새 예약의 시작 시각보다 늦은 경우 (기존.종료 > 새.시작)
+        3. 단, 기존 예약의 종료 시각과 새 예약의 시작 시각이 같은 경우는 충돌로 보지 않음
+        """
         return {
             "and": [
                 {
                     "property": self.props["start_time"],
-                    "date": {"on_or_before": end_dt.isoformat()}
+                    "date": {"before": end_dt.isoformat()}  # 기존.시작 < 새.종료
                 },
                 {
                     "property": self.props["end_time"],
-                    "date": {"on_or_after": start_dt.isoformat()}
+                    "date": {"after": start_dt.isoformat()}  # 기존.종료 > 새.시작
                 },
                 {
                     "property": self.props["room_name"],
@@ -447,6 +478,7 @@ class NotionService(LoggerMixin):
             self.props["team_name"]: {"rich_text": [{"text": {"content": reservation_data.team_name}}]},
         }
 
+        # 참석자 정보 추가
         if reservation_data.participants:
             properties[self.props["participants"]] = {
                 "people": [{"id": p} for p in reservation_data.participants]
@@ -454,6 +486,7 @@ class NotionService(LoggerMixin):
         else:
             properties[self.props["participants"]] = {"people": []}
         
+        # 반복 ID 추가 (있는 경우)
         if reservation_data.recurring_id:
             properties[self.props["recurring_id"]] = {
                 "rich_text": [{"text": {"content": reservation_data.recurring_id}}]
