@@ -75,10 +75,7 @@ class ReservationService(LoggerMixin):
                 raise ValidationError("올바른 팀을 선택해주세요.")
             team_name = self.config.TEAMS[team_id]
             
-            # 참석자 (선택사항)
-            participants = values["participants_block"]["participants_select"].get("selected_users", [])
-            
-            # 반복 설정 (선택사항)
+            """# 반복 설정 (선택사항)
             recurring_options = values["recurring_block"]["recurring_checkbox"].get("selected_options", [])
             is_recurring = bool(recurring_options and recurring_options[0]["value"] == "weekly")
             
@@ -90,7 +87,7 @@ class ReservationService(LoggerMixin):
                     recurring_weeks = int(recurring_weeks_option["value"])
                 else:
                     raise ValidationError("반복 예약을 선택한 경우 반복 주수를 선택해주세요.")
-            
+            """
             # ReservationData 객체 생성
             return ReservationData(
                 title=title.strip(),
@@ -101,10 +98,10 @@ class ReservationService(LoggerMixin):
                 team_id=team_id,
                 team_name=team_name,
                 booker_id=user_id,
-                participants=participants,
+                #participants=participants,
                 booking_date=datetime.now().isoformat(),
-                is_recurring=is_recurring,
-                recurring_weeks=recurring_weeks
+                #is_recurring=is_recurring,
+                #recurring_weeks=recurring_weeks
             )
             
         except (KeyError, TypeError, ValueError) as e:
@@ -141,8 +138,8 @@ class ReservationService(LoggerMixin):
                 participants=base_reservation.participants,
                 recurring_id=base_reservation.recurring_id,
                 booking_date=base_reservation.booking_date,
-                is_recurring=False,
-                recurring_weeks=recurring_weeks
+                # is_recurring=False,
+                # recurring_weeks=recurring_weeks
             )
             all_reservations.append(next_reservation)
         
@@ -194,45 +191,45 @@ class ReservationService(LoggerMixin):
             reservation_data = self.parse_modal_data(view_or_data, user_id)
         
         # 반복 예약인 경우 반복 ID 미리 생성
-        if reservation_data.is_recurring:
-            reservation_data.recurring_id = str(uuid.uuid4())
+        # if reservation_data.is_recurring:
+        #     reservation_data.recurring_id = str(uuid.uuid4())
         
         # 반복 예약인 경우 트랜잭션 방식으로 처리
-        if reservation_data.is_recurring:
-            self._create_recurring_reservations_transaction(reservation_data, user_id)
-        else:
-            # 단일 예약 처리
-            conflicts = notion_service.get_conflicting_reservations(
-                reservation_data.start_dt, 
-                reservation_data.end_dt, 
-                reservation_data.room_name
+        # if reservation_data.is_recurring:
+        #     self._create_recurring_reservations_transaction(reservation_data, user_id)
+        # else:
+        # 단일 예약 처리
+        conflicts = notion_service.get_conflicting_reservations(
+            reservation_data.start_dt, 
+            reservation_data.end_dt, 
+            reservation_data.room_name
+        )
+        if conflicts:
+            parsed_conflicts = notion_service.parse_conflicting_reservations(conflicts)
+            raise ConflictError(
+                "해당 시간은 이미 다른 예약과 겹칩니다.",
+                conflicting_reservations=parsed_conflicts
             )
-            if conflicts:
-                parsed_conflicts = notion_service.parse_conflicting_reservations(conflicts)
-                raise ConflictError(
-                    "해당 시간은 이미 다른 예약과 겹칩니다.",
-                    conflicting_reservations=parsed_conflicts
-                )
 
-            try:
-                page = notion_service.create_reservation(reservation_data)
-                reservation_data.page_id = page["id"]
-                
-                slack_service.send_confirmation_message(user_id, reservation_data.to_dict())
-                
-                self.log_info("단일 예약 생성 완료", 
-                             user_id=user_id,
-                             title=reservation_data.title,
-                             room=reservation_data.room_name,
-                             page_id=reservation_data.page_id)
-                             
-            except Exception as e:
-                self.log_error(f"단일 예약 생성 중 오류 발생: {e}", 
-                             user_id=user_id,
-                             title=reservation_data.title,
-                             room=reservation_data.room_name,
-                             exc_info=True)
-                raise
+        try:
+            page = notion_service.create_reservation(reservation_data)
+            reservation_data.page_id = page["id"]
+            
+            slack_service.send_confirmation_message(user_id, reservation_data.to_dict())
+            
+            self.log_info("단일 예약 생성 완료", 
+                         user_id=user_id,
+                         title=reservation_data.title,
+                         room=reservation_data.room_name,
+                         page_id=reservation_data.page_id)
+                         
+        except Exception as e:
+            self.log_error(f"단일 예약 생성 중 오류 발생: {e}", 
+                         user_id=user_id,
+                         title=reservation_data.title,
+                         room=reservation_data.room_name,
+                         exc_info=True)
+            raise
 
     @handle_exceptions(default_message="예약 생성에 실패했습니다")
     def create_new_reservation_without_validation(self, reservation_data: ReservationData, user_id: str) -> None:
@@ -244,29 +241,29 @@ class ReservationService(LoggerMixin):
             user_id: 사용자 ID
         """
         # 반복 예약인 경우 트랜잭션 방식으로 처리
-        if reservation_data.is_recurring:
-            self._create_recurring_reservations_without_validation(reservation_data, user_id)
-        else:
-            # 단일 예약 처리
-            try:
-                page = notion_service.create_reservation(reservation_data)
-                reservation_data.page_id = page["id"]
-                
-                slack_service.send_confirmation_message(user_id, reservation_data.to_dict())
-                
-                self.log_info("단일 예약 생성 완료", 
-                             user_id=user_id,
-                             title=reservation_data.title,
-                             room=reservation_data.room_name,
-                             page_id=reservation_data.page_id)
-                             
-            except Exception as e:
-                self.log_error(f"단일 예약 생성 중 오류 발생: {e}", 
-                             user_id=user_id,
-                             title=reservation_data.title,
-                             room=reservation_data.room_name,
-                             exc_info=True)
-                raise
+        # if reservation_data.is_recurring:
+        #     self._create_recurring_reservations_without_validation(reservation_data, user_id)
+        # else:
+        # 단일 예약 처리
+        try:
+            page = notion_service.create_reservation(reservation_data)
+            reservation_data.page_id = page["id"]
+            
+            slack_service.send_confirmation_message(user_id, reservation_data.to_dict())
+            
+            self.log_info("단일 예약 생성 완료", 
+                         user_id=user_id,
+                         title=reservation_data.title,
+                         room=reservation_data.room_name,
+                         page_id=reservation_data.page_id)
+                         
+        except Exception as e:
+            self.log_error(f"단일 예약 생성 중 오류 발생: {e}", 
+                         user_id=user_id,
+                         title=reservation_data.title,
+                         room=reservation_data.room_name,
+                         exc_info=True)
+            raise
 
     def _create_recurring_reservations_transaction(self, base_reservation: ReservationData, user_id: str) -> None:
         """
@@ -302,8 +299,8 @@ class ReservationService(LoggerMixin):
                     participants=base_reservation.participants,
                     recurring_id=recurring_id,
                     booking_date=base_reservation.booking_date,
-                    is_recurring=False,
-                    recurring_weeks=recurring_weeks
+                    # is_recurring=False,
+                    # recurring_weeks=recurring_weeks
                 )
                 all_reservations.append(next_reservation)
             
@@ -441,8 +438,8 @@ class ReservationService(LoggerMixin):
                     participants=base_reservation.participants,
                     recurring_id=recurring_id,
                     booking_date=base_reservation.booking_date,
-                    is_recurring=False,
-                    recurring_weeks=recurring_weeks
+                    # is_recurring=False,
+                    # recurring_weeks=recurring_weeks
                 )
                 all_reservations.append(next_reservation)
             
@@ -589,23 +586,23 @@ class ReservationService(LoggerMixin):
                             break
             
             # 참석자 정보 추출
-            participants = []
-            if self.config.NOTION_PROPS["participants"] in properties:
-                participants_prop = properties[self.config.NOTION_PROPS["participants"]]
-                if participants_prop.get("people"):
-                    participants = [p["id"] for p in participants_prop["people"]]
+            # participants = []
+            # if self.config.NOTION_PROPS["participants"] in properties:
+            #     participants_prop = properties[self.config.NOTION_PROPS["participants"]]
+            #     if participants_prop.get("people"):
+            #         participants = [p["id"] for p in participants_prop["people"]]
             
             # 반복 ID 확인 (반복 예약 여부 판단)
-            is_recurring = False
-            recurring_weeks = "4"  # 기본값
-            if self.config.NOTION_PROPS["recurring_id"] in properties:
-                recurring_prop = properties[self.config.NOTION_PROPS["recurring_id"]]
-                if recurring_prop.get("rich_text") and recurring_prop["rich_text"]:
-                    recurring_id = recurring_prop["rich_text"][0]["text"]["content"]
-                    is_recurring = bool(recurring_id.strip())
-                    # 반복 예약인 경우 기본 주수를 설정 (실제로는 DB에서 조회해야 하지만 여기서는 기본값 사용)
-                    if is_recurring:
-                        recurring_weeks = "4"  # 기본값, 실제 구현에서는 별도 필드에서 조회
+            # is_recurring = False
+            # recurring_weeks = "4"  # 기본값
+            # if self.config.NOTION_PROPS["recurring_id"] in properties:
+            #     recurring_prop = properties[self.config.NOTION_PROPS["recurring_id"]]
+            #     if recurring_prop.get("rich_text") and recurring_prop["rich_text"]:
+            #         recurring_id = recurring_prop["rich_text"][0]["text"]["content"]
+            #         is_recurring = bool(recurring_id.strip())
+            #         # 반복 예약인 경우 기본 주수를 설정 (실제로는 DB에서 조회해야 하지만 여기서는 기본값 사용)
+            #         if is_recurring:
+            #             recurring_weeks = "4"  # 기본값, 실제 구현에서는 별도 필드에서 조회
             
             modal_data = ReservationModalData(
                 title=title,
@@ -614,13 +611,13 @@ class ReservationService(LoggerMixin):
                 start_time=start_time,
                 end_time=end_time,
                 team_id=team_id,
-                participants=participants,
+                #participants=participants,
                 page_id=reservation.get("id", "")
             )
             
             # 반복 설정 정보 추가
-            modal_data.is_recurring = is_recurring
-            modal_data.recurring_weeks = recurring_weeks
+            # modal_data.is_recurring = is_recurring
+            # modal_data.recurring_weeks = recurring_weeks
             
             return modal_data
             

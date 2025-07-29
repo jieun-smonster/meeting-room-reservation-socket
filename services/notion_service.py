@@ -478,7 +478,7 @@ class NotionService(LoggerMixin):
             self.props["team_name"]: {"rich_text": [{"text": {"content": reservation_data.team_name}}]},
         }
 
-        # 참석자 정보 추가
+        """# 참석자 정보 추가
         if reservation_data.participants:
             properties[self.props["participants"]] = {
                 "people": [{"id": p} for p in reservation_data.participants]
@@ -491,7 +491,7 @@ class NotionService(LoggerMixin):
             properties[self.props["recurring_id"]] = {
                 "rich_text": [{"text": {"content": reservation_data.recurring_id}}]
             }
-
+        """
         return properties
 
 

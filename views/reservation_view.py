@@ -232,7 +232,7 @@ def build_reservation_modal(initial_data: Optional[Dict] = None, is_edit: bool =
         }
     })
     
-    # 참석자 선택 (선택사항)
+    """# 참석자 선택 (선택사항)
     modal["blocks"].append({
         "type": "input",
         "block_id": "participants_block",
@@ -274,8 +274,8 @@ def build_reservation_modal(initial_data: Optional[Dict] = None, is_edit: bool =
     }
     
     # 반복 예약인 경우 초기값 설정
-    if initial_data.get("is_recurring"):
-        recurring_element["initial_options"] = [recurring_option]
+    # if initial_data.get("is_recurring"):
+    #     recurring_element["initial_options"] = [recurring_option]
 
     modal["blocks"].append({
         "type": "input",
@@ -323,7 +323,7 @@ def build_reservation_modal(initial_data: Optional[Dict] = None, is_edit: bool =
             "emoji": True
         },
         "optional": True
-    })
+    })"""
     
     # 수정 모달인 경우 private_metadata에 page_id 추가
     if is_edit and initial_data.get("page_id"):

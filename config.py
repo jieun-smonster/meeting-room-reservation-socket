@@ -64,10 +64,10 @@ class AppConfig:
         "start_time": "시작시각",    # 시작 시간 (Date 타입)
         "end_time": "종료시각",      # 종료 시간 (Date 타입)
         "team_name": "주관 팀명",    # 주관 팀 (Select 타입 권장)
-        "participants": "참석자",   # 참석자 (Person 타입)
+    #    "participants": "참석자",   # 참석자 (Person 타입)
         "booker": "예약자",         # 예약자 (Person 타입)
         "booking_date": "예약일",   # 예약 날짜 (Date 타입)
-        "recurring_id": "반복 ID", # 반복 예약 ID (Text 타입)
+    #    "recurring_id": "반복 ID", # 반복 예약 ID (Text 타입)
     }
     
     # 반복 예약 설정

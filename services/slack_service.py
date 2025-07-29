@@ -130,14 +130,14 @@ def send_error_message(user_id: str, trigger_id: str, error_text: str):
         logging.error(f"Slack 오류 Modal 전송 실패: {e.response['error']}")
 
 def send_confirmation_message(user_id: str, details: dict):
-    """예약 성공 후 사용자에게 확인 DM을 보냅니다."""
+    """예약 성공 후 사용자에게 확인 DM을 보냅니다.
     # 참석자 리스트가 비어있을 경우 '없음'으로 표시
     participants = details.get("participants")
     if participants:
         participants_text = ", ".join([f"<@{p}>" for p in participants])
     else:
         participants_text = "없음"
-
+    """
     # 날짜와 시간을 분리하여 더 명확하게 표시
     date_str = details['start_dt'].strftime('%Y년 %m월 %d일 (%A)')
     start_time = details['start_dt'].strftime('%H:%M')
@@ -166,7 +166,7 @@ def send_confirmation_message(user_id: str, details: dict):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"🗓️ *{date_str}* *{start_time} ~ {end_time}*"
+                "text": f"🗓️ *{date_str}* *{start_time} ~ {end_time}* *{details['room_name']}*"
             }
         },
         {
@@ -174,15 +174,7 @@ def send_confirmation_message(user_id: str, details: dict):
             "fields": [
                 {
                     "type": "mrkdwn", 
-                    "text": f"🏢 *{details['room_name']}*"
-                },
-                {
-                    "type": "mrkdwn", 
-                    "text": f"👥 *주관 팀* : {details['team_name']}"
-                },
-                {
-                    "type": "mrkdwn", 
-                    "text": f"📝 *회의 주제* : {details['title']}"
+                    "text": f"*[{details['team_name']}]* {details['title']}"
                 },
                 # {
                 #     "type": "mrkdwn", 
@@ -252,7 +244,7 @@ def send_update_confirmation_message(user_id: str, details: dict):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"🗓️ *{date_str}*\n⏰ *{start_time} ~ {end_time}*"
+                "text": f"🗓️ *{date_str}* *{start_time} ~ {end_time}* *{details['room_name']}*"
             }
         },
         {
@@ -260,16 +252,9 @@ def send_update_confirmation_message(user_id: str, details: dict):
             "fields": [
                 {
                     "type": "mrkdwn", 
-                    "text": f"🏢 {details['room_name']}"
+                    "text": f"[{details['team_name']}] {details['title']}"
                 },
-                {
-                    "type": "mrkdwn", 
-                    "text": f"👥 *주관 팀* : {details['team_name']}"
-                },
-                {
-                    "type": "mrkdwn", 
-                    "text": f"📝 *회의 주제* : {details['title']}"
-                },
+               
                 # {
                 #     "type": "mrkdwn", 
                 #     "text": f"👤 *참석자* : {participants_text}"

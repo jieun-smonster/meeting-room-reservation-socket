@@ -128,79 +128,79 @@ def handle_reservation_modal_submission(ack, body, client, logger):
         reservation_data = reservation_service.parse_modal_data(view, user_id)
         
         # 반복 예약인 경우 반복 ID 미리 생성
-        if reservation_data.is_recurring:
-            reservation_data.recurring_id = str(uuid.uuid4())
+        # if reservation_data.is_recurring:
+        #     reservation_data.recurring_id = str(uuid.uuid4())
         
         # 충돌 검사 수행
-        if reservation_data.is_recurring:
-            # 반복 예약의 경우 모든 주차에 대해 충돌 검사
-            try:
-                reservation_service._validate_recurring_reservations(reservation_data, user_id)
-            except ConflictError as e:
-                # 반복 예약 충돌 시 모달 업데이트
-                modal_data = {
-                    "title": view["state"]["values"]["title_block"]["title_input"]["value"],
-                    "room_id": view["state"]["values"]["room_block"]["room_select"]["selected_option"]["value"] if view["state"]["values"]["room_block"]["room_select"].get("selected_option") else None,
-                    "date": view["state"]["values"]["date_block"]["datepicker_action"]["selected_date"],
-                    "start_time": view["state"]["values"]["start_time_block"]["start_time_action"]["selected_time"],
-                    "end_time": view["state"]["values"]["end_time_block"]["end_time_action"]["selected_time"],
-                    "team_id": view["state"]["values"]["team_block"]["team_select"]["selected_option"]["value"] if view["state"]["values"]["team_block"]["team_select"].get("selected_option") else None,
-                    "participants": view["state"]["values"]["participants_block"]["participants_select"].get("selected_users", []),
-                    "is_recurring": bool(view["state"]["values"]["recurring_block"]["recurring_checkbox"].get("selected_options")),
-                    "recurring_weeks": view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"]["selected_option"]["value"] if view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"].get("selected_option") else "4"
-                }
-                
-                conflict_info = {"message": str(e)}
-                
-                updated_modal = build_reservation_modal(
-                    initial_data=modal_data,
-                    is_edit=False,
-                    conflict_info=conflict_info
-                )
-                
-                ack(response_action="update", view=updated_modal)
-                logger.info(f"반복 예약 충돌 - 모달 업데이트 - 사용자: {user_id}")
-                return
-        else:
-            # 단일 예약의 경우 일반 충돌 검사
-            conflicts = notion_service.get_conflicting_reservations(
-                reservation_data.start_dt, 
-                reservation_data.end_dt, 
-                reservation_data.room_name
+        # if reservation_data.is_recurring:
+        #     # 반복 예약의 경우 모든 주차에 대해 충돌 검사
+        #     try:
+        #         reservation_service._validate_recurring_reservations(reservation_data, user_id)
+        #     except ConflictError as e:
+        #         # 반복 예약 충돌 시 모달 업데이트
+        #         modal_data = {
+        #             "title": view["state"]["values"]["title_block"]["title_input"]["value"],
+        #             "room_id": view["state"]["values"]["room_block"]["room_select"]["selected_option"]["value"] if view["state"]["values"]["room_block"]["room_select"].get("selected_option") else None,
+        #             "date": view["state"]["values"]["date_block"]["datepicker_action"]["selected_date"],
+        #             "start_time": view["state"]["values"]["start_time_block"]["start_time_action"]["selected_time"],
+        #             "end_time": view["state"]["values"]["end_time_block"]["end_time_action"]["selected_time"],
+        #             "team_id": view["state"]["values"]["team_block"]["team_select"]["selected_option"]["value"] if view["state"]["values"]["team_block"]["team_select"].get("selected_option") else None,
+        #             "participants": view["state"]["values"]["participants_block"]["participants_select"].get("selected_users", []),
+        #             "is_recurring": bool(view["state"]["values"]["recurring_block"]["recurring_checkbox"].get("selected_options")),
+        #             "recurring_weeks": view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"]["selected_option"]["value"] if view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"].get("selected_option") else "4"
+        #         }
+        #         
+        #         conflict_info = {"message": str(e)}
+        #         
+        #         updated_modal = build_reservation_modal(
+        #             initial_data=modal_data,
+        #             is_edit=False,
+        #             conflict_info=conflict_info
+        #         )
+        #         
+        #         ack(response_action="update", view=updated_modal)
+        #         logger.info(f"반복 예약 충돌 - 모달 업데이트 - 사용자: {user_id}")
+        #         return
+        # else:
+        # 단일 예약의 경우 일반 충돌 검사
+        conflicts = notion_service.get_conflicting_reservations(
+            reservation_data.start_dt, 
+            reservation_data.end_dt, 
+            reservation_data.room_name
+        )
+        if conflicts:
+            parsed_conflicts = notion_service.parse_conflicting_reservations(conflicts)
+            
+            # 단일 예약 충돌 시 모달 업데이트
+            modal_data = {
+                "title": view["state"]["values"]["title_block"]["title_input"]["value"],
+                "room_id": view["state"]["values"]["room_block"]["room_select"]["selected_option"]["value"] if view["state"]["values"]["room_block"]["room_select"].get("selected_option") else None,
+                "date": view["state"]["values"]["date_block"]["datepicker_action"]["selected_date"],
+                "start_time": view["state"]["values"]["start_time_block"]["start_time_action"]["selected_time"],
+                "end_time": view["state"]["values"]["end_time_block"]["end_time_action"]["selected_time"],
+                "team_id": view["state"]["values"]["team_block"]["team_select"]["selected_option"]["value"] if view["state"]["values"]["team_block"]["team_select"].get("selected_option") else None,
+                #"participants": view["state"]["values"]["participants_block"]["participants_select"].get("selected_users", []),
+                # "is_recurring": bool(view["state"]["values"]["recurring_block"]["recurring_checkbox"].get("selected_options")),
+                # "recurring_weeks": view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"]["selected_option"]["value"] if view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"].get("selected_option") else "4"
+            }
+            
+            conflict = parsed_conflicts[0]
+            conflict_info = {
+                "start_time": conflict["start_time"],
+                "end_time": conflict["end_time"],
+                "team_name": conflict["team_name"],
+                "title": conflict["title"]
+            }
+            
+            updated_modal = build_reservation_modal(
+                initial_data=modal_data,
+                is_edit=False,
+                conflict_info=conflict_info
             )
-            if conflicts:
-                parsed_conflicts = notion_service.parse_conflicting_reservations(conflicts)
-                
-                # 단일 예약 충돌 시 모달 업데이트
-                modal_data = {
-                    "title": view["state"]["values"]["title_block"]["title_input"]["value"],
-                    "room_id": view["state"]["values"]["room_block"]["room_select"]["selected_option"]["value"] if view["state"]["values"]["room_block"]["room_select"].get("selected_option") else None,
-                    "date": view["state"]["values"]["date_block"]["datepicker_action"]["selected_date"],
-                    "start_time": view["state"]["values"]["start_time_block"]["start_time_action"]["selected_time"],
-                    "end_time": view["state"]["values"]["end_time_block"]["end_time_action"]["selected_time"],
-                    "team_id": view["state"]["values"]["team_block"]["team_select"]["selected_option"]["value"] if view["state"]["values"]["team_block"]["team_select"].get("selected_option") else None,
-                    "participants": view["state"]["values"]["participants_block"]["participants_select"].get("selected_users", []),
-                    "is_recurring": bool(view["state"]["values"]["recurring_block"]["recurring_checkbox"].get("selected_options")),
-                    "recurring_weeks": view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"]["selected_option"]["value"] if view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"].get("selected_option") else "4"
-                }
-                
-                conflict = parsed_conflicts[0]
-                conflict_info = {
-                    "start_time": conflict["start_time"],
-                    "end_time": conflict["end_time"],
-                    "team_name": conflict["team_name"],
-                    "title": conflict["title"]
-                }
-                
-                updated_modal = build_reservation_modal(
-                    initial_data=modal_data,
-                    is_edit=False,
-                    conflict_info=conflict_info
-                )
-                
-                ack(response_action="update", view=updated_modal)
-                logger.info(f"단일 예약 충돌 - 모달 업데이트 - 사용자: {user_id}")
-                return
+            
+            ack(response_action="update", view=updated_modal)
+            logger.info(f"단일 예약 충돌 - 모달 업데이트 - 사용자: {user_id}")
+            return
         
         # 검증 및 충돌 검사 성공 시 즉시 모달 닫기
         ack()
@@ -280,9 +280,9 @@ def handle_edit_modal_submission(ack, body, client, logger):
                 "start_time": view["state"]["values"]["start_time_block"]["start_time_action"]["selected_time"],
                 "end_time": view["state"]["values"]["end_time_block"]["end_time_action"]["selected_time"],
                 "team_id": view["state"]["values"]["team_block"]["team_select"]["selected_option"]["value"] if view["state"]["values"]["team_block"]["team_select"].get("selected_option") else None,
-                "participants": view["state"]["values"]["participants_block"]["participants_select"].get("selected_users", []),
-                "is_recurring": bool(view["state"]["values"]["recurring_block"]["recurring_checkbox"].get("selected_options")),
-                "recurring_weeks": view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"]["selected_option"]["value"] if view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"].get("selected_option") else "4",
+                # "participants": view["state"]["values"]["participants_block"]["participants_select"].get("selected_users", []),
+                # "is_recurring": bool(view["state"]["values"]["recurring_block"]["recurring_checkbox"].get("selected_options")),
+                # "recurring_weeks": view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"]["selected_option"]["value"] if view["state"]["values"]["recurring_weeks_block"]["recurring_weeks_select"].get("selected_option") else "4",
                 "page_id": page_id
             }
             
@@ -382,13 +382,13 @@ def handle_edit_reservation_button(ack, body, client):
         modal_data.page_id = page_id  # page_id 추가
         
         # 반복 예약인 경우 수정 불가 메시지 표시
-        if modal_data.is_recurring:
-            slack_service.send_ephemeral_message(
-                user_id,
-                "⚠️ 반복 예약은 개별 수정이 불가능합니다.\n시스템팀에 문의해주세요."
-            )
-            logger.info(f"반복 예약 수정 시도 차단 - 사용자: {user_id}, 페이지: {page_id}")
-            return
+        # if modal_data.is_recurring:
+        #     slack_service.send_ephemeral_message(
+        #         user_id,
+        #         "⚠️ 반복 예약은 개별 수정이 불가능합니다.\n시스템팀에 문의해주세요."
+        #     )
+        #     logger.info(f"반복 예약 수정 시도 차단 - 사용자: {user_id}, 페이지: {page_id}")
+        #     return
         
         # 수정 모달 열기
         client.views_open(
@@ -547,13 +547,13 @@ def handle_reservation_action(ack, body, client):
                 modal_data.page_id = page_id  # page_id 추가
                 
                 # 반복 예약인 경우 수정 불가 메시지 표시
-                if modal_data.is_recurring:
-                    slack_service.send_ephemeral_message(
-                        user_id,
-                        "⚠️ 반복 예약은 개별 수정이 불가능합니다.\n시스템팀에 문의해주세요."
-                    )
-                    logger.info(f"반복 예약 수정 시도 차단 - 사용자: {user_id}, 페이지: {page_id}")
-                    return
+                # if modal_data.is_recurring:
+                #     slack_service.send_ephemeral_message(
+                #         user_id,
+                #         "⚠️ 반복 예약은 개별 수정이 불가능합니다.\n시스템팀에 문의해주세요."
+                #     )
+                #     logger.info(f"반복 예약 수정 시도 차단 - 사용자: {user_id}, 페이지: {page_id}")
+                #     return
                 
                 # 수정 모달 열기
                 client.views_open(

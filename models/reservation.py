@@ -25,12 +25,12 @@ class ReservationData:
     team_id: str
     team_name: str
     booker_id: str
-    participants: List[str]
+    #participants: List[str]
     page_id: Optional[str] = None
     recurring_id: Optional[str] = None
     booking_date: Optional[str] = None
-    is_recurring: bool = False
-    recurring_weeks: int = 4  # 기본 4주
+    #is_recurring: bool = False
+    #recurring_weeks: int = 4  # 기본 4주
 
     def to_dict(self) -> Dict[str, Any]:
         """딕셔너리로 변환"""
@@ -43,12 +43,12 @@ class ReservationData:
             "team_id": self.team_id,
             "team_name": self.team_name,
             "booker_id": self.booker_id,
-            "participants": self.participants,
+            #"participants": self.participants,
             "page_id": self.page_id,
             "recurring_id": self.recurring_id,
             "booking_date": self.booking_date,
-            "is_recurring": self.is_recurring,
-            "recurring_weeks": self.recurring_weeks
+            #"is_recurring": self.is_recurring,
+            #"recurring_weeks": self.recurring_weeks
         }
 
     @property
@@ -76,11 +76,11 @@ class ReservationModalData:
     start_time: str = ""
     end_time: str = ""
     team_id: str = ""
-    participants: List[str] = None
+    #participants: List[str] = None
     page_id: str = ""
-    is_recurring: bool = False
-    recurring_weeks: str = "4"  # 기본 4주
+    #is_recurring: bool = False
+    #recurring_weeks: str = "4"  # 기본 4주
 
-    def __post_init__(self):
-        if self.participants is None:
-            self.participants = [] 
+    # def __post_init__(self):
+    #     if self.participants is None:
+    #         self.participants = [] 
