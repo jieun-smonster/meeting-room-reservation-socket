@@ -49,11 +49,12 @@ class AppConfig:
     
     # 팀 정보 (Notion DB와 동기화 필요)
     TEAMS: Dict[str, str] = {
-        "team_marketing": "전략마케팅",
+        "team_marketing": "전략",
         "team_system": "시스템", 
         "team_operation": "운영",
         "team_franchise": "가맹",
         "team_management": "경영",
+        "team_etc": "미지정",
     }
     
     # Notion 데이터베이스 속성 매핑
