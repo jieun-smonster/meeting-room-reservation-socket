@@ -5,7 +5,7 @@ import os
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from config import AppConfig
 from utils.constants import ActionIds
@@ -16,6 +16,9 @@ logging.basicConfig(level=logging.INFO)
 # Slack 클라이언트 초기화
 client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
 NOTIFICATION_CHANNEL = os.environ.get("SLACK_NOTIFICATION_CHANNEL")
+
+# 한국 시간대 설정 (UTC+9)
+KST = timezone(timedelta(hours=9))
 
 def send_message(channel_id: str, text: str, blocks: list = None):
     """지정된 채널 또는 사용자에게 메시지를 전송합니다."""
@@ -358,13 +361,20 @@ def format_reservation_status_message(reservations: list, query_date: str = None
             date_str = ""
             
             if start_prop.get("date") and end_prop.get("date"):
+                # UTC로 저장된 시간을 한국 시간대로 변환
                 start_time = datetime.fromisoformat(start_prop["date"]["start"].replace("Z", "+00:00"))
                 end_time = datetime.fromisoformat(end_prop["date"]["start"].replace("Z", "+00:00"))
+                start_time_kst = start_time.astimezone(KST)
+                end_time_kst = end_time.astimezone(KST)
                 
                 # 날짜 문자열 생성
                 weekdays = ['월', '화', '수', '목', '금', '토', '일']
-                korean_weekday = weekdays[start_time.weekday()]
-                date_str = start_time.strftime(f'%Y년 %m월 %d일 ({korean_weekday})')
+                korean_weekday = weekdays[start_time_kst.weekday()]
+                date_str = start_time_kst.strftime(f'%Y년 %m월 %d일 ({korean_weekday})')
+                
+                # 시간 정보도 한국 시간대로 설정
+                start_time = start_time_kst
+                end_time = end_time_kst
             
             # 주관 팀 추출
             team_prop = properties.get(AppConfig.NOTION_PROPS["team_name"], {})
@@ -556,9 +566,12 @@ def format_simple_reservation_text(reservations: list, query_date: str = None):
             
             time_text = "시간 미정"
             if start_prop.get("date") and end_prop.get("date"):
+                # UTC로 저장된 시간을 한국 시간대로 변환
                 start_time = datetime.fromisoformat(start_prop["date"]["start"].replace("Z", "+00:00"))
                 end_time = datetime.fromisoformat(end_prop["date"]["start"].replace("Z", "+00:00"))
-                time_text = f"{start_time.strftime('%H:%M')} ~ {end_time.strftime('%H:%M')}"
+                start_time_kst = start_time.astimezone(KST)
+                end_time_kst = end_time.astimezone(KST)
+                time_text = f"{start_time_kst.strftime('%H:%M')} ~ {end_time_kst.strftime('%H:%M')}"
             
             # 팀 이름 추출
             team_prop = properties.get(AppConfig.NOTION_PROPS["team_name"], {})
@@ -742,8 +755,11 @@ def format_today_reservations_for_home_tab(reservations: list):
             start_time = None
             end_time = None
             if start_prop.get("date") and end_prop.get("date"):
+                # UTC로 저장된 시간을 한국 시간대로 변환
                 start_time = datetime.fromisoformat(start_prop["date"]["start"].replace("Z", "+00:00"))
                 end_time = datetime.fromisoformat(end_prop["date"]["start"].replace("Z", "+00:00"))
+                start_time = start_time.astimezone(KST)
+                end_time = end_time.astimezone(KST)
             
             # 주관 팀 추출
             team_prop = properties.get(AppConfig.NOTION_PROPS["team_name"], {})

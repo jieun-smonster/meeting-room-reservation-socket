@@ -1,7 +1,7 @@
 # services/notion_service.py
 # Notion API와 통신하는 모든 로직을 담당합니다.
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from notion_client import Client
 
@@ -13,6 +13,9 @@ from utils.date_utils import get_date_range_for_day
 from exceptions import NotionError
 
 logger = get_logger(__name__)
+
+# 한국 시간대 설정 (UTC+9)
+KST = timezone(timedelta(hours=9))
 
 
 class NotionService(LoggerMixin):
@@ -214,7 +217,7 @@ class NotionService(LoggerMixin):
             NotionError: Notion API 에러 발생 시
         """
         if target_date is None:
-            target_date = datetime.now()
+            target_date = datetime.now(KST)
         
         start_of_day, end_of_day = get_date_range_for_day(target_date)
         
@@ -266,10 +269,7 @@ class NotionService(LoggerMixin):
         Raises:
             NotionError: Notion API 에러 발생 시
         """
-        now = datetime.now()
-        if now.tzinfo is None:
-            now = now.astimezone()
-        
+        now = datetime.now(KST)
         end_date = now + timedelta(days=days_ahead)
         
         filter_conditions = {

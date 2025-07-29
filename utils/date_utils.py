@@ -1,14 +1,17 @@
 # utils/date_utils.py
 # 날짜 관련 유틸리티 함수들을 제공합니다.
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 logger = logging.getLogger(__name__)
 
+# 한국 시간대 설정 (UTC+9)
+KST = timezone(timedelta(hours=9))
+
 def get_current_date():
     """현재 날짜를 YYYY-MM-DD 형식으로 반환합니다."""
-    return datetime.now().strftime('%Y-%m-%d')
+    return datetime.now(KST).strftime('%Y-%m-%d')
 
 def get_korean_weekday(date_str):
     """날짜 문자열을 받아 요일을 반환합니다."""
@@ -25,7 +28,7 @@ def get_time_emoji(time_str):
 
 def get_next_10min_time():
     """현재 시간 기준으로 다음 10분 단위 시간을 반환합니다."""
-    now = datetime.now()
+    now = datetime.now(KST)
     # 현재 시간에서 10분 후
     future_time = now + timedelta(minutes=10)
     
@@ -70,10 +73,10 @@ class DateParser:
         text = text.strip()
         
         if not text or text in ["오늘", "today"]:
-            return datetime.now(), "오늘"
+            return datetime.now(KST), "오늘"
             
         elif text in ["내일", "tomorrow"]:
-            return datetime.now() + timedelta(days=1), "내일"
+            return datetime.now(KST) + timedelta(days=1), "내일"
             
         elif text == "주간":
             return None, "앞으로 7일간"
@@ -81,7 +84,8 @@ class DateParser:
         else:
             # YYYY-MM-DD 형식으로 파싱 시도
             try:
-                target_date = datetime.strptime(text, "%Y-%m-%d")
+                # 입력된 날짜를 한국 시간대로 설정
+                target_date = datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=KST)
                 return target_date, target_date.strftime("%Y년 %m월 %d일")
             except ValueError:
                 raise ValueError("날짜 형식이 올바르지 않습니다")

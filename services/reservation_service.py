@@ -3,7 +3,7 @@
 
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
 from config import AppConfig
@@ -16,6 +16,9 @@ from exceptions import ValidationError, ConflictError, NotionError
 from . import notion_service, slack_service
 
 logger = get_logger(__name__)
+
+# 한국 시간대 설정 (UTC+9)
+KST = timezone(timedelta(hours=9))
 
 
 class ReservationService(LoggerMixin):
@@ -60,8 +63,9 @@ class ReservationService(LoggerMixin):
             start_time_str = values["start_time_block"]["start_time_action"]["selected_time"]
             end_time_str = values["end_time_block"]["end_time_action"]["selected_time"]
             
-            start_dt = datetime.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M")
-            end_dt = datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M")
+            # 한국 시간대(KST)로 datetime 객체 생성
+            start_dt = datetime.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=KST)
+            end_dt = datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=KST)
             
             if start_dt >= end_dt:
                 raise ValidationError("종료 시간은 시작 시간보다 나중이어야 합니다.")
@@ -561,17 +565,21 @@ class ReservationService(LoggerMixin):
             if self.config.NOTION_PROPS["start_time"] in properties:
                 start_prop = properties[self.config.NOTION_PROPS["start_time"]]
                 if start_prop.get("date", {}).get("start"):
+                    # UTC로 저장된 시간을 한국 시간대로 변환
                     start_dt = datetime.fromisoformat(start_prop["date"]["start"].replace("Z", "+00:00"))
-                    date = start_dt.strftime("%Y-%m-%d")
-                    start_time = start_dt.strftime("%H:%M")
+                    start_dt_kst = start_dt.astimezone(KST)
+                    date = start_dt_kst.strftime("%Y-%m-%d")
+                    start_time = start_dt_kst.strftime("%H:%M")
             
             # 종료 시간 추출
             end_time = ""
             if self.config.NOTION_PROPS["end_time"] in properties:
                 end_prop = properties[self.config.NOTION_PROPS["end_time"]]
                 if end_prop.get("date", {}).get("start"):
+                    # UTC로 저장된 시간을 한국 시간대로 변환
                     end_dt = datetime.fromisoformat(end_prop["date"]["start"].replace("Z", "+00:00"))
-                    end_time = end_dt.strftime("%H:%M")
+                    end_dt_kst = end_dt.astimezone(KST)
+                    end_time = end_dt_kst.strftime("%H:%M")
             
             # 팀 정보 추출
             team_id = ""
