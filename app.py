@@ -6,9 +6,32 @@ from slack_bolt import App
 from dotenv import load_dotenv
 from typing import Dict, Any
 import uuid
+import sys
+import os
+from datetime import datetime
 
 # .env 파일에서 환경 변수 로드
 load_dotenv()
+
+# 필수 환경변수 검증
+required_env_vars = [
+    "SLACK_BOT_TOKEN", 
+    "SLACK_APP_TOKEN", 
+    "NOTION_API_KEY", 
+    "NOTION_DATABASE_ID"
+]
+
+missing_vars = []
+for var in required_env_vars:
+    if not os.getenv(var):
+        missing_vars.append(var)
+
+if missing_vars:
+    print(f"❌ 필수 환경변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
+    print("Docker 환경에서는 .env 파일이 올바르게 마운트되었는지 확인해주세요.")
+    sys.exit(1)
+
+print("✅ 모든 필수 환경변수가 설정되었습니다.")
 
 # 설정 및 유틸리티 임포트
 from config import get_slack_config
@@ -22,29 +45,228 @@ from views.reservation_view import build_reservation_modal
 from services import reservation_service, notion_service, slack_service
 from exceptions import ValidationError, ConflictError, NotionError
 
-# 로깅 설정
-setup_logging()
+# HTTP 서버 (헬스체크용)
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+import json
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    """Docker 헬스체크를 위한 간단한 HTTP 핸들러"""
+    
+    def do_GET(self):
+        if self.path == '/health':
+            try:
+                # 기본적인 서비스 상태 확인
+                status = {
+                    "status": "healthy",
+                    "timestamp": datetime.now().isoformat(),
+                    "services": {
+                        "slack": "unknown",
+                        "notion": "unknown"
+                    }
+                }
+                
+                # Slack 연결 확인
+                try:
+                    auth_test = app.client.auth_test()
+                    status["services"]["slack"] = "healthy" if auth_test.get("ok") else "unhealthy"
+                except:
+                    status["services"]["slack"] = "unhealthy"
+                
+                # Notion 연결 확인 (간단한 버전)
+                try:
+                    notion_service.get_reservations_by_date()
+                    status["services"]["notion"] = "healthy"
+                except:
+                    status["services"]["notion"] = "unhealthy"
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(status).encode())
+                
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                error_response = {"status": "unhealthy", "error": str(e)}
+                self.wfile.write(json.dumps(error_response).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        # 헬스체크 로그는 생략
+        pass
+
+def start_health_server():
+    """헬스체크 서버를 백그라운드에서 시작합니다"""
+    try:
+        server = HTTPServer(('', 3000), HealthCheckHandler)
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"헬스체크 서버 시작 실패: {e}")
+
+# 로깅 설정 - Docker 환경에서는 DEBUG 레벨로 설정
+log_level = os.getenv("LOG_LEVEL", "INFO")
+setup_logging(level=log_level)
 logger = get_logger(__name__)
 
+logger.info(f"🚀 애플리케이션 시작 중... (로그 레벨: {log_level})")
+
 # Slack 설정 로드
-slack_config = get_slack_config()
+try:
+    slack_config = get_slack_config()
+    logger.info("✅ Slack 설정 로드 완료")
+except Exception as e:
+    logger.error(f"❌ Slack 설정 로드 실패: {e}")
+    sys.exit(1)
 
 # Bolt 앱 초기화
-app = App(token=slack_config.bot_token)
+try:
+    app = App(token=slack_config.bot_token)
+    logger.info("✅ Slack Bolt 앱 초기화 완료")
+    
+    # 간단한 연결 테스트
+    from slack_sdk import WebClient
+    test_client = WebClient(token=slack_config.bot_token)
+    auth_test = test_client.auth_test()
+    if auth_test["ok"]:
+        logger.info(f"✅ Slack 연결 테스트 성공 - Bot: {auth_test['user']}")
+    else:
+        logger.error(f"❌ Slack 연결 테스트 실패")
+        
+except Exception as e:
+    logger.error(f"❌ Slack Bolt 앱 초기화 실패: {e}")
+    sys.exit(1)
 
 # --- Slack Home Tab Handler ---
 @app.event("app_home_opened")
-def handle_app_home_opened(event, client):
+def handle_app_home_opened(event, client, ack):
     """사용자가 앱의 Home Tab을 열었을 때 호출되는 핸들러입니다."""
-    user_id = event["user"]
+    # 즉시 ack() 호출로 Slack에 이벤트 수신 확인
+    ack()
     
-    try:
-        # Home Tab View 업데이트
-        slack_service.update_home_tab(client, user_id)
-        logger.info(f"Home Tab 업데이트 성공 - 사용자: {user_id}")
+    user_id = event["user"]
+    logger.info(f"🏠 홈탭 열기 이벤트 시작 - 사용자: {user_id}")
+    
+    import threading
+    import time
+    
+    def update_home_tab_async():
+        """비동기로 홈탭을 업데이트합니다 (EC2 환경 최적화)"""
+        start_time = time.time()
         
-    except Exception as e:
-        logger.error(f"Home Tab 업데이트 실패 - 사용자: {user_id}: {e}")
+        try:
+            # 1단계: Notion에서 예약 데이터 조회 (timeout 8초)
+            logger.info(f"📊 예약 데이터 조회 시작 - 사용자: {user_id}")
+            
+            def get_reservations_with_timeout():
+                try:
+                    return notion_service.get_reservations_by_date()
+                except Exception as e:
+                    logger.error(f"💥 Notion 조회 실패: {e}")
+                    return []  # 빈 리스트로 폴백
+            
+            # Notion 조회를 timeout과 함께 실행
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Notion API 호출 timeout")
+            
+            try:
+                # Linux/Unix 환경에서만 signal 사용 (Docker 환경)
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(8)  # 8초 timeout
+                
+                today_reservations = get_reservations_with_timeout()
+                
+                signal.alarm(0)  # timeout 해제
+                
+            except (TimeoutError, OSError):
+                # timeout 또는 signal 사용 불가 환경
+                logger.warning("⚠️ Notion 조회 timeout 또는 signal 사용 불가 - 폴백 처리")
+                today_reservations = []
+            
+            elapsed_notion = time.time() - start_time
+            logger.info(f"📊 예약 데이터 조회 완료 - 사용자: {user_id}, 예약 수: {len(today_reservations)}, 소요시간: {elapsed_notion:.2f}초")
+            
+            # 2단계: 홈탭 뷰 구성
+            logger.info(f"🎨 홈탭 뷰 구성 시작 - 사용자: {user_id}")
+            from services.slack_service import build_home_tab_view
+            home_view = build_home_tab_view(today_reservations)
+            
+            elapsed_view = time.time() - start_time
+            logger.info(f"🎨 홈탭 뷰 구성 완료 - 사용자: {user_id}, 블록 수: {len(home_view.get('blocks', []))}, 누적시간: {elapsed_view:.2f}초")
+            
+            # 3단계: 홈탭 업데이트 API 호출
+            logger.info(f"🔄 홈탭 업데이트 API 호출 시작 - 사용자: {user_id}")
+            response = client.views_publish(
+                user_id=user_id,
+                view=home_view
+            )
+            
+            total_elapsed = time.time() - start_time
+            
+            if response.get("ok"):
+                logger.info(f"✅ 홈탭 업데이트 성공 - 사용자: {user_id}, 총 소요시간: {total_elapsed:.2f}초")
+            else:
+                logger.error(f"❌ 홈탭 업데이트 API 응답 실패 - 사용자: {user_id}, 응답: {response}")
+                
+        except Exception as e:
+            total_elapsed = time.time() - start_time
+            logger.error(f"💥 홈탭 업데이트 실패 - 사용자: {user_id}, 소요시간: {total_elapsed:.2f}초: {e}", exc_info=True)
+            
+            # 폴백: 최소한의 홈탭 뷰 제공
+            try:
+                logger.info(f"🛡️ 폴백 홈탭 제공 시도 - 사용자: {user_id}")
+                fallback_view = {
+                    "type": "home",
+                    "blocks": [
+                        {
+                            "type": "header",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "🏢 회의실 예약 시스템"
+                            }
+                        },
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "⚠️ 홈탭 로딩 중 문제가 발생했습니다.\n잠시 후 다시 시도해주세요."
+                            }
+                        },
+                        {
+                            "type": "actions",
+                            "elements": [
+                                {
+                                    "type": "button",
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "🔄 새로고침"
+                                    },
+                                    "action_id": ActionIds.HOME_REFRESH
+                                }
+                            ]
+                        }
+                    ]
+                }
+                
+                response = client.views_publish(
+                    user_id=user_id,
+                    view=fallback_view
+                )
+                logger.info(f"🛡️ 폴백 홈탭 제공 완료 - 사용자: {user_id}")
+                
+            except Exception as fallback_error:
+                logger.error(f"🚨 폴백 홈탭 제공도 실패 - 사용자: {user_id}: {fallback_error}", exc_info=True)
+    
+    # 백그라운드 스레드에서 홈탭 업데이트 실행
+    thread = threading.Thread(target=update_home_tab_async, daemon=True)
+    thread.start()
+    
+    logger.info(f"🚀 홈탭 업데이트 백그라운드 처리 시작 - 사용자: {user_id}")
 
 # --- Slack Command Handlers ---
 @app.command(SlackCommands.RESERVATION)
@@ -621,16 +843,44 @@ def handle_reservation_action(ack, body, client):
             logger.error(f"오류 알림 전송 실패: {notify_error}")
 
 # --- Main Execution ---
+# Socket Mode Handler 시작
 if __name__ == "__main__":
-    logger.info("🚀 회의실 예약 시스템 시작")
-    logger.info(f"Slack 워크스페이스 연결 준비 완료")
-    
     try:
-        handler = SocketModeHandler(app, slack_config.app_token)
+        logger.info("🚀 회의실 예약 시스템 시작")
+        
+        # 헬스체크 서버 시작 (백그라운드)
+        health_thread = threading.Thread(target=start_health_server, daemon=True)
+        health_thread.start()
+        logger.info("✅ 헬스체크 서버 시작 (포트 3000)")
+        
+        # Socket Mode 설정 개선 (EC2 환경용)
+        from slack_bolt.adapter.socket_mode import SocketModeHandler
+        
+        # timeout 설정 증가 (EC2 환경에서 네트워크 지연 고려)
+        handler = SocketModeHandler(
+            app, 
+            app_token=get_slack_config().app_token,
+            # EC2 환경을 위한 timeout 증가
+            ping_interval=10,        # 기본값: 30초 -> 10초로 단축 (연결 상태 빠른 확인)
+            trace_enabled=True       # 디버깅용 trace 활성화
+        )
+        
+        logger.info("✅ Socket Mode Handler 초기화 완료")
+        
+        # Slack 연결 테스트
+        logger.info("🔌 Slack 연결 테스트 중...")
+        auth_test = app.client.auth_test()
+        if auth_test.get("ok"):
+            logger.info(f"✅ Slack 연결 성공 - Bot: {auth_test.get('user')}, Team: {auth_test.get('team')}")
+        else:
+            logger.error(f"❌ Slack 연결 실패: {auth_test}")
+            sys.exit(1)
+            
+        logger.info("🏃‍♂️ Socket Mode 서버 시작")
         handler.start()
+        
     except KeyboardInterrupt:
-        logger.info("👋 시스템 종료 요청")
+        logger.info("👋 시스템 종료")
     except Exception as e:
-        logger.error(f"❌ 시스템 시작 실패: {e}", exc_info=True)
-    finally:
-        logger.info("🔚 회의실 예약 시스템 종료")
+        logger.error(f"💥 시스템 시작 실패: {e}", exc_info=True)
+        sys.exit(1)

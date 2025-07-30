@@ -2,13 +2,16 @@
 # Slack API와 통신하는 모든 로직을 담당합니다.
 
 import os
+import logging
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional, Any
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-import logging
-from datetime import datetime, timezone, timedelta
 
 from config import AppConfig
 from utils.constants import ActionIds
+from utils.date_utils import get_current_date
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -594,117 +597,191 @@ def post_daily_schedule(schedule_blocks: list):
 
 def update_home_tab(client: WebClient, user_id: str):
     """사용자의 Home Tab을 업데이트합니다."""
+    import time
+    start_time = time.time()
+    
     try:
-        # 오늘의 예약 현황을 가져옵니다
+        logging.info(f"🏠 홈탭 업데이트 시작 - 사용자: {user_id}")
+        
+        # 1단계: 오늘의 예약 현황을 가져옵니다 (timeout 5초)
+        logging.info(f"📊 Notion 데이터 조회 시작 - 사용자: {user_id}")
         from services import notion_service
-        today_reservations = notion_service.get_reservations_by_date()
         
-        # Home Tab View 구성
-        home_view = build_home_tab_view(today_reservations)
+        try:
+            today_reservations = notion_service.get_reservations_by_date()
+            elapsed = time.time() - start_time
+            logging.info(f"📊 Notion 데이터 조회 완료 - 사용자: {user_id}, 예약 수: {len(today_reservations)}, 소요시간: {elapsed:.2f}초")
+        except Exception as notion_error:
+            logging.error(f"💥 Notion 데이터 조회 실패 - 사용자: {user_id}: {notion_error}", exc_info=True)
+            # 빈 데이터로 폴백
+            today_reservations = []
         
-        # Home Tab 업데이트
-        response = client.views_publish(
-            user_id=user_id,
-            view=home_view
-        )
+        # 2단계: Home Tab View 구성
+        logging.info(f"🎨 홈탭 뷰 구성 시작 - 사용자: {user_id}")
+        try:
+            home_view = build_home_tab_view(today_reservations)
+            view_elapsed = time.time() - start_time
+            logging.info(f"🎨 홈탭 뷰 구성 완료 - 사용자: {user_id}, 블록 수: {len(home_view.get('blocks', []))}, 누적시간: {view_elapsed:.2f}초")
+        except Exception as view_error:
+            logging.error(f"💥 홈탭 뷰 구성 실패 - 사용자: {user_id}: {view_error}", exc_info=True)
+            raise view_error
         
-        logging.info(f"Home Tab 업데이트 성공 - 사용자: {user_id}")
-        return response
-        
-    except SlackApiError as e:
-        logging.error(f"Home Tab 업데이트 실패 - 사용자: {user_id}: {e.response['error']}")
-        raise e
+        # 3단계: Home Tab 업데이트 API 호출
+        logging.info(f"🔄 Slack API 호출 시작 - 사용자: {user_id}")
+        try:
+            response = client.views_publish(
+                user_id=user_id,
+                view=home_view
+            )
+            
+            total_elapsed = time.time() - start_time
+            
+            if response.get("ok"):
+                logging.info(f"✅ 홈탭 업데이트 성공 - 사용자: {user_id}, 총 소요시간: {total_elapsed:.2f}초")
+                return response
+            else:
+                logging.error(f"❌ Slack API 응답 오류 - 사용자: {user_id}: {response}")
+                raise Exception(f"Slack API 오류: {response}")
+                
+        except SlackApiError as slack_error:
+            logging.error(f"💥 Slack API 에러 - 사용자: {user_id}: {slack_error.response}")
+            raise slack_error
+            
     except Exception as e:
-        logging.error(f"Home Tab 업데이트 중 오류 - 사용자: {user_id}: {e}")
+        total_elapsed = time.time() - start_time
+        logging.error(f"🚨 홈탭 업데이트 전체 실패 - 사용자: {user_id}, 소요시간: {total_elapsed:.2f}초, 오류: {e}", exc_info=True)
         raise e
 
 def build_home_tab_view(reservations: list):
     """Home Tab의 View를 구성합니다."""
-    blocks = []
-    
-    # 헤더와 새로고침 섹션
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    blocks.extend([
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": "🏢 회의실 예약 시스템",
-                "emoji": True
+    try:
+        logging.info(f"🎨 홈탭 뷰 구성 시작 - 예약 수: {len(reservations)}")
+        blocks = []
+        
+        # 헤더와 새로고침 섹션
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        blocks.extend([
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "🏢 회의실 예약 시스템",
+                    "emoji": True
+                }
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "🔄 새로고침",
+                            "emoji": True
+                        },
+                        "action_id": ActionIds.HOME_REFRESH
+                    }
+                ]
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"마지막 업데이트: {current_time}"
+                    }
+                ]
             }
-        },
-        {
-            "type": "actions",
-            "elements": [
+        ])
+        
+        blocks.append({"type": "divider"})
+        
+        # 오늘의 예약 현황
+        logging.info(f"📊 예약 현황 블록 생성 시작")
+        try:
+            today_blocks = format_today_reservations_for_home_tab(reservations)
+            blocks.extend(today_blocks)
+            logging.info(f"📊 예약 현황 블록 생성 완료 - 추가된 블록 수: {len(today_blocks)}")
+        except Exception as reservation_error:
+            logging.error(f"💥 예약 현황 블록 생성 실패: {reservation_error}", exc_info=True)
+            # 폴백 블록 추가
+            blocks.extend([
                 {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "⚠️ 예약 현황을 불러오는 중 문제가 발생했습니다."
+                    }
+                }
+            ])
+        
+        blocks.append({"type": "divider"})
+        
+        # 예약하기 섹션
+        logging.info(f"🎯 예약하기 섹션 생성")
+        blocks.extend([
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "🎯 *새로운 회의를 예약하세요!*"
+                },
+                "accessory": {
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": "🔄 새로고침",
+                        "text": "📅 회의 예약하기",
                         "emoji": True
                     },
-                    "action_id": ActionIds.HOME_REFRESH
+                    "style": "primary",
+                    "action_id": ActionIds.HOME_MAKE_RESERVATION
                 }
-            ]
-        },
-        {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"                                                                    마지막 업데이트: {current_time}"
-                }
-            ]
-        }
-    ])
-    
-    blocks.append({"type": "divider"})
-    
-    # 오늘의 예약 현황
-    today_blocks = format_today_reservations_for_home_tab(reservations)
-    blocks.extend(today_blocks)
-    
-    blocks.append({"type": "divider"})
-    
-    # 예약하기 섹션
-    blocks.extend([
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "🎯 *새로운 회의를 예약하세요!*"
-            },
-            "accessory": {
-                "type": "button",
-                "text": {
-                    "type": "plain_text",
-                    "text": "📅 회의 예약하기",
-                    "emoji": True
-                },
-                "style": "primary",
-                "action_id": "home_make_reservation"
             }
+        ])
+        
+        # 도움말 섹션
+        blocks.extend([
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": "💡 *도움말:* `/회의실예약` 명령어로도 예약할 수 있습니다."
+                    }
+                ]
+            }
+        ])
+        
+        home_view = {
+            "type": "home",
+            "blocks": blocks
         }
-    ])
-    
-    # 도움말 섹션
-    blocks.extend([
-        {"type": "divider"},
-        {
-            "type": "context",
-            "elements": [
+        
+        logging.info(f"✅ 홈탭 뷰 구성 완료 - 총 블록 수: {len(blocks)}")
+        return home_view
+        
+    except Exception as e:
+        logging.error(f"🚨 홈탭 뷰 구성 중 치명적 오류: {e}", exc_info=True)
+        # 최소한의 뷰 반환
+        return {
+            "type": "home",
+            "blocks": [
                 {
-                    "type": "mrkdwn",
-                    "text": "💡 *도움말*\n• 각 예약을 클릭하여 수정/취소할 수 있습니다\n• 어떤 채널에서든 `/회의실예약` 명령어로 예약할 수 있습니다\n• `/회의실조회`,`/회의실조회 내일`,`/회의실조회 주간` 명령어로 예약 현황을 확인할 수 있습니다\n"
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "🏢 회의실 예약 시스템"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "⚠️ 시스템 오류가 발생했습니다. 관리자에게 문의해주세요."
+                    }
                 }
             ]
         }
-    ])
-    
-    return {
-        "type": "home",
-        "blocks": blocks
-    }
 
 def format_today_reservations_for_home_tab(reservations: list):
     """Home Tab용 오늘의 예약 현황을 포맷합니다."""
